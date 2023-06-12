@@ -1,0 +1,109 @@
+task1
+
+DROP TABLE prov cascade;
+
+CREATE TABLE prov (
+  id serial PRIMARY KEY,
+  date_column DATE
+);
+
+INSERT INTO prov (date_column)
+SELECT CURRENT_DATE + (ROW_NUMBER() OVER ())::INTEGER
+FROM generate_series(1, 10000);
+
+
+WITH RECURSIVE date_sequence AS (
+  SELECT CURRENT_DATE::date AS date_column, 1 AS rn
+  UNION ALL
+  SELECT (date_column + make_interval(days := random_interval))::date, rn + 1
+  FROM date_sequence
+  CROSS JOIN LATERAL (
+    SELECT (random() * 6 + 2)::INT AS random_interval
+  ) AS random_intervals
+  WHERE rn < 100
+)
+SELECT date_column
+FROM date_sequence
+ORDER BY rn;
+
+
+task2
+
+DROP TABLE employee CASCADE;
+DROP TABLE sales CASCADE;
+
+CREATE TABLE employee (
+  id INT PRIMARY KEY,
+  name VARCHAR(255)
+);
+
+CREATE TABLE sales (
+  id INT PRIMARY KEY,
+  employee_id INT REFERENCES employee(id),
+  price INT
+);
+
+INSERT INTO employee (id, name)
+VALUES (1, 'Лёша'),
+       (2, 'Саша'),
+       (3, 'Миша'),
+       (4, 'Вася'),
+       (5, 'Катя'),
+       (6, 'Полина'),
+       (7, 'Маша');
+
+INSERT INTO sales (id, employee_id, price)
+VALUES (1, 1, 100),
+       (2, 1, 150),
+       (3, 2, 200),
+       (4, 3, 120),
+       (5, 3, 80),
+       (6, 5, 200),
+       (7, 7, 120),
+       (8, 6, 200),
+       (9, 5, 120);
+
+WITH sales_summary AS (
+  SELECT employee_id, COUNT(*) AS sales_c, SUM(price) AS sales_s
+  FROM sales
+  GROUP BY employee_id
+)
+SELECT e.id, e.name, COALESCE(s.sales_c, 0) AS sales_c, RANK() OVER (ORDER BY COALESCE(s.sales_c, 0) DESC) AS sales_rank_c,
+       COALESCE(s.sales_s, 0) AS sales_s, RANK() OVER (ORDER BY COALESCE(s.sales_s, 0) DESC) AS sales_rank_s
+FROM employee e
+LEFT JOIN sales_summary s ON e.id = s.employee_id
+ORDER BY e.id;
+
+task3
+
+DROP TABLE transfers CASCADE;
+
+CREATE TABLE transfers (
+  from_account INT,
+  to_account INT,
+  amount INT,
+  tdate DATE
+);
+
+INSERT INTO transfers (from_account, to_account, amount, tdate)
+VALUES
+  (111111, 121212, 1000, '2023-06-01'),
+  (222222, 131313, 500, '2023-06-02'),
+  (333333, 141441, 750, '2023-06-03'),
+  (444444, 151515, 300, '2023-06-04'),
+  (555555, 161616, 2000, '2023-06-05'),
+  (666666, 171717, 1500, '2023-06-05'),
+  (777777, 118118, 800, '2023-06-07'),
+  (888888, 191919, 400, '2023-06-08'),
+  (999999, 101010, 1200, '2023-06-09'),
+  (100000, 123123, 600, '2023-06-10');
+
+WITH balance_periods AS (
+  SELECT from_account AS acc, tdate AS dt_from,
+         LEAD(tdate, 1, '3000-01-01') OVER (PARTITION BY from_account ORDER BY tdate) AS dt_to,
+         SUM(amount) OVER (PARTITION BY from_account ORDER BY tdate) AS balance
+  FROM transfers
+)
+SELECT acc, dt_from, dt_to, balance
+FROM balance_periods
+ORDER BY acc, dt_from;
